@@ -6,9 +6,11 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace UnqliteNet {
-    public sealed class Unqlite {
-        private const string kDllName = "unqlite.dll";
+namespace UnQLiteNet {
+    /// <summary>
+    ///  Base class for core interfaces.
+    /// </summary>
+    public sealed class UnQLite {
         private const int kSmallKeyBufferSize = 128;
         private const int kSmallDataBufferSize = 512;
         private static readonly Encoding Encoding = Encoding.UTF8;
@@ -16,118 +18,202 @@ namespace UnqliteNet {
         private IntPtr pDb_;
         internal bool isAutoCommit_ = true;
 
-        private Unqlite(IntPtr pDb) {
+        private UnQLite(IntPtr pDb) {
             pDb_ = pDb;
         }
 
-        public Unqlite(string fileName, UnqliteOpenModel model) {
-            UnqliteResultCode code = unqlite_open(out pDb_, fileName, model);
-            if(code != UnqliteResultCode.Ok) {
-                throw new UnqliteException(code, GetDataBaseErrorLog());
+        /// <summary>
+        ///  Initializes a new instance of the UnQLite class.
+        /// </summary>
+        /// <remarks>
+        ///  Opening a new database connection.
+        ///  If fileName is ":mem:", then a private, in-memory database is created for the connection.
+        ///  The in-memory database will vanish when the database connection is closed.Future versions 
+        ///  of UnQLite might make use of additional special filenames that begin with the ":" character. 
+        ///  It is recommended that when a database filename actually does begin with a ":" character 
+        ///  you should prefix the filename with a pathname such as "./" to avoid ambiguity.
+        ///  Note: Transactions are not supported for in-memory databases.
+        ///  Note: This routine does not open the target database file. 
+        ///  It merely initialize and prepare the database object handle for later usage.
+        /// </remarks>
+        /// <param name="fileName">The Operation file.</param>
+        /// <param name="model">Control the database access mode.</param>
+        /// <exception cref="System.ArgumentNullException">
+        ///  fileName is null.
+        /// </exception>
+        /// <exception cref="UnQLiteException">
+        /// The UnQLiteException when open file.
+        /// </exception>
+        public UnQLite(string fileName, UnQLiteOpenModel model) {
+            if(fileName == null) {
+                throw new ArgumentNullException("fileName");
+            }
+
+            UnQLiteResultCode code = UnsafeNativeMethods.unqlite_open(out pDb_, fileName, model);
+            if(code != UnQLiteResultCode.Ok) {
+                throw new UnQLiteException(code, GetDataBaseErrorLog());
             }
         }
 
-        public static UnqliteResultCode TryOpen(string fileName, UnqliteOpenModel model, out Unqlite unqlite) {
+        /// <summary>
+        /// Initializes a new instance of the UnQLite class without UnQLiteException.
+        /// </summary>
+        /// <exception cref="System.ArgumentNullException">
+        ///  fileName is null.
+        /// </exception>
+        public static UnQLiteResultCode TryOpen(string fileName, UnQLiteOpenModel model, out UnQLite unqlite) {
+            if(fileName == null) {
+                throw new ArgumentNullException("fileName");
+            }
+
             unqlite = null;
             IntPtr pDB;
-            UnqliteResultCode code = unqlite_open(out pDB, fileName, model);
-            if(code == UnqliteResultCode.Ok) {
-                unqlite = new Unqlite(pDB);
+            UnQLiteResultCode code = UnsafeNativeMethods.unqlite_open(out pDB, fileName, model);
+            if(code == UnQLiteResultCode.Ok) {
+                unqlite = new UnQLite(pDB);
             }
             return code;
         }
 
+        /// <summary>
+        /// The pointer of native unqlite object.
+        /// </summary>
+        public IntPtr DbPtr {
+            get {
+                return pDb_;
+            }
+        }
+
+        /// <summary>
+        /// Closing the database instance.destroyed and all associated resources are deallocated.
+        /// </summary>
+        /// <remarks>
+        /// If Close is invoked while a transaction is open, the transaction is automatically committed.
+        /// Each database must be closed in order to avoid memory leaks and malformed database image.
+        /// </remarks>
         public void Close() {
             if(pDb_ != IntPtr.Zero) {
-                unqlite_close(pDb_);
+                UnsafeNativeMethods.unqlite_close(pDb_);
                 pDb_ = IntPtr.Zero;
             }
         }
 
+        /// <summary>
+        /// Determines whether thread-safe.
+        /// </summary>
+        /// <remarks>
+        /// This is the default mode when UnQLite is compiled with threading support.  
+        /// It will be true after the UnQLite library initialized. The first
+        /// call to unqlite_open() will automatically initialize the library.
+        /// Change thread-safe you can invoke UnQLite.LibInit method. 
+        /// </remarks>
         public static bool IsThreadSafe {
             get {
-                return unqlite_lib_is_threadsafe() == 1;
+                return UnsafeNativeMethods.unqlite_lib_is_threadsafe() == 1;
             }
         }
-
+        /// <summary>
+        ///  The current version of the UnQLite engine.
+        /// </summary>
         public unsafe static string Version {
             get {
-                return new string(unqlite_lib_version());
+                return new string(UnsafeNativeMethods.unqlite_lib_version());
             }
         }
 
+        /// <summary>
+        ///  The library signature of the UnQLite engine.
+        /// </summary>
         public unsafe static string Signature {
             get {
-                return new string(unqlite_lib_signature());
+                return new string(UnsafeNativeMethods.unqlite_lib_signature());
             }
         }
 
+        /// <summary>
+        ///  The library identification of the UnQLite engine in the Symisc source tree.
+        /// </summary>
         public unsafe static string Ident {
             get {
-                return new string(unqlite_lib_ident());
+                return new string(UnsafeNativeMethods.unqlite_lib_ident());
             }
         }
 
+        /// <summary>
+        /// The copyright notice of the UnQLite engine.
+        /// </summary>
         public unsafe static string Copyright {
             get {
-                return new string(unqlite_lib_copyright());
+                return new string(UnsafeNativeMethods.unqlite_lib_copyright());
             }
         }
 
-        public static void LibInit(UnqliteLibConfigSetting setting) {
+        /// <summary>
+        /// initializes the UnQLite library. It should be invoked before other methods called.  
+        /// </summary>
+        /// <exception cref="System.ArgumentNullException">
+        /// setting is null
+        /// </exception>
+        /// <exception cref="UnQLiteException">
+        /// The UnQLiteException when initializes the library.
+        /// </exception>
+        public static void LibInit(UnQLiteLibConfigSetting setting) {
             if(setting == null) {
                 throw new ArgumentNullException("setting");
             }
 
-            bool hasChange = false;
-            if(setting.IsThreadSafe) {
-                UnqliteResultCode code = unqlite_lib_config(UnqliteLibConfigCode.ThreadLevelMulti, __arglist());
-                if(code != UnqliteResultCode.Ok) {
-                    throw new UnqliteException(code, null);
-                }
-                hasChange = true;
+            UnQLiteLibConfigCode config = setting.IsThreadSafe ? UnQLiteLibConfigCode.ThreadLevelMulti : UnQLiteLibConfigCode.ThreadLevelSingle;
+            UnQLiteResultCode code = UnsafeNativeMethods.unqlite_lib_config(config, __arglist());
+            if(code != UnQLiteResultCode.Ok) {
+                throw new UnQLiteException(code, null);
             }
 
             if(setting.PageSize > 0) {
-                UnqliteResultCode code = unqlite_lib_config(UnqliteLibConfigCode.PageSize, __arglist(setting.PageSize));
-                if(code != UnqliteResultCode.Ok) {
-                    throw new UnqliteException(code, null);
+                code = UnsafeNativeMethods.unqlite_lib_config(UnQLiteLibConfigCode.PageSize, __arglist(setting.PageSize));
+                if(code != UnQLiteResultCode.Ok) {
+                    throw new UnQLiteException(code, null);
                 }
-                hasChange = true;
             }
 
-            if(hasChange) {
-                UnqliteResultCode code = unqlite_lib_init();
-                if(code != UnqliteResultCode.Ok) {
-                    throw new UnqliteException(code, null);
-                }
+            code = UnsafeNativeMethods.unqlite_lib_init();
+            if(code != UnQLiteResultCode.Ok) {
+                throw new UnQLiteException(code, null);
             }
         }
 
-        internal void TryCommit(ref UnqliteResultCode code) {
-            if(code == UnqliteResultCode.Ok && isAutoCommit_) {
-                code = unqlite_commit(pDb_);
-                if(code != UnqliteResultCode.Ok) {
-                    if(code != UnqliteResultCode.Busy && code != UnqliteResultCode.NotImplemented) {
+        internal void TryCommit(ref UnQLiteResultCode code) {
+            if(code == UnQLiteResultCode.Ok && isAutoCommit_) {
+                code = UnsafeNativeMethods.unqlite_commit(pDb_);
+                if(code != UnQLiteResultCode.Ok) {
+                    if(code != UnQLiteResultCode.Busy && code != UnQLiteResultCode.NotImplemented) {
                         Rollback();
                     }
                 }
             }
         }
 
-        internal UnqliteResultCode Rollback() {
-            return unqlite_rollback(pDb_);
+        internal UnQLiteResultCode Rollback() {
+            return UnsafeNativeMethods.unqlite_rollback(pDb_);
         }
 
-        private unsafe UnqliteResultCode InternalTryAppendRaw(byte* keyBuffer, int keyCount, ArraySegment<byte> data) {
+        private unsafe UnQLiteResultCode InternalTryAppendRaw(byte* keyBuffer, int keyCount, ArraySegment<byte> data) {
             fixed (byte* pdata = data.Array) {
-                UnqliteResultCode code = unqlite_kv_append(pDb_, keyBuffer, keyCount, pdata + data.Offset, data.Count);
+                UnQLiteResultCode code = UnsafeNativeMethods.unqlite_kv_append(pDb_, keyBuffer, keyCount, pdata + data.Offset, data.Count);
                 TryCommit(ref code);
                 return code;
             }
         }
 
-        public unsafe UnqliteResultCode TryAppendRaw(string key, ArraySegment<byte> data) {
+        /// <summary>
+        /// Append binary data to a database record without UnQLiteException.
+        /// </summary>
+        /// <param name="key">Record key.</param>
+        /// <param name="data">Record data.</param>
+        /// <returns>The result code.</returns>
+        /// <exception cref="System.ArgumentNullException">
+        /// key is null
+        /// </exception>
+        public unsafe UnQLiteResultCode TryAppendRaw(string key, ArraySegment<byte> data) {
             if(key == null) {
                 throw new ArgumentNullException("key");
             }
@@ -145,15 +231,30 @@ namespace UnqliteNet {
             }
         }
 
+        /// <summary>
+        /// Append binary data to a database record.
+        /// </summary>
+        /// <remarks>
+        /// Write a new record into the database. If the record does not exists, it is created. 
+        /// Otherwise, the new data chunk is appended to the end of the old chunk.
+        /// </remarks>
+        /// <param name="key">Record key.</param>
+        /// <param name="data">Record data.</param>
+        /// <exception cref="System.ArgumentNullException">
+        /// key is null
+        /// </exception>
+        /// <exception cref="UnQLiteException">
+        /// An UnQLiteException occurred.
+        /// </exception>
         public void AppendRaw(string key, ArraySegment<byte> data) {
-            UnqliteResultCode code = TryAppendRaw(key, data);
-            if(code != UnqliteResultCode.Ok) {
-                throw new UnqliteException(code, GetDataBaseErrorLog());
+            UnQLiteResultCode code = TryAppendRaw(key, data);
+            if(code != UnQLiteResultCode.Ok) {
+                throw new UnQLiteException(code, GetDataBaseErrorLog());
             }
         }
 
-        private unsafe UnqliteResultCode InternalTryAppend(byte* keyBuffer, int keyCount, string data) {
-            UnqliteResultCode code;
+        private unsafe UnQLiteResultCode InternalTryAppend(byte* keyBuffer, int keyCount, string data) {
+            UnQLiteResultCode code;
             int dataCount = Encoding.GetByteCount(data);
             if(dataCount <= kSmallDataBufferSize) {
                 byte* dataBuffer = stackalloc byte[dataCount];
@@ -162,19 +263,28 @@ namespace UnqliteNet {
                         Encoding.GetBytes(dataPtr, data.Length, dataBuffer, dataCount);
                     }
                 }
-                code = unqlite_kv_append(pDb_, keyBuffer, keyCount, dataBuffer, dataCount);
+                code = UnsafeNativeMethods.unqlite_kv_append(pDb_, keyBuffer, keyCount, dataBuffer, dataCount);
             }
             else {
                 byte[] dataBytes = Encoding.GetBytes(data);
                 fixed (byte* dataBuffer = dataBytes) {
-                    code = unqlite_kv_append(pDb_, keyBuffer, keyCount, dataBuffer, dataBytes.Length);
+                    code = UnsafeNativeMethods.unqlite_kv_append(pDb_, keyBuffer, keyCount, dataBuffer, dataBytes.Length);
                 }
             }
             TryCommit(ref code);
             return code;
         }
 
-        public unsafe UnqliteResultCode TryAppend(string key, string data) {
+        /// <summary>
+        /// Append string data to a database record without UnQLiteException.
+        /// </summary>
+        /// <param name="key">Record key.</param>
+        /// <param name="data">Record data.</param>
+        /// <returns>The result code.</returns>
+        /// <exception cref="System.ArgumentNullException">
+        /// key or data is null
+        /// </exception>
+        public unsafe UnQLiteResultCode TryAppend(string key, string data) {
             if(key == null) {
                 throw new ArgumentNullException("key");
             }
@@ -195,14 +305,36 @@ namespace UnqliteNet {
             }
         }
 
-        private unsafe UnqliteResultCode InteranlTryGetRaw(byte* keyBuffer, int keyCount, out byte[] data) {
+        /// <summary>
+        /// Append string data to a database record.
+        /// </summary>
+        /// <remarks>
+        /// Write a new record into the database. If the record does not exists, it is created. 
+        /// Otherwise, the new data chunk is appended to the end of the old chunk.
+        /// </remarks>
+        /// <param name="key">Record key.</param>
+        /// <param name="data">Record data.</param>
+        /// <exception cref="System.ArgumentNullException">
+        /// key or data is null
+        /// </exception>
+        /// <exception cref="UnQLiteException">
+        /// An UnQLiteException occurred.
+        /// </exception>
+        public void Append(string key, string data) {
+            UnQLiteResultCode code = TryAppend(key, data);
+            if(code != UnQLiteResultCode.Ok) {
+                throw new UnQLiteException(code, GetDataBaseErrorLog());
+            }
+        }
+
+        private unsafe UnQLiteResultCode InteranlTryGetRaw(byte* keyBuffer, int keyCount, out byte[] data) {
             data = null;
             long dataLength;
-            UnqliteResultCode code = unqlite_kv_fetch(pDb_, keyBuffer, keyCount, null, out dataLength);
+            UnQLiteResultCode code = UnsafeNativeMethods.unqlite_kv_fetch(pDb_, keyBuffer, keyCount, null, out dataLength);
             if(code == 0) {
                 byte[] valueBytes = new byte[dataLength];
                 fixed (byte* valueBuffer = valueBytes) {
-                    code = unqlite_kv_fetch(pDb_, keyBuffer, keyCount, valueBuffer, out dataLength);
+                    code = UnsafeNativeMethods.unqlite_kv_fetch(pDb_, keyBuffer, keyCount, valueBuffer, out dataLength);
                     if(code == 0) {
                         data = valueBytes;
                     }
@@ -211,7 +343,16 @@ namespace UnqliteNet {
             return code;
         }
 
-        public unsafe UnqliteResultCode TryGetRaw(string key, out byte[] data) {
+        /// <summary>
+        ///  Get a binary record from the database without UnQLiteException.
+        /// </summary>
+        /// <param name="key">Record key.</param>
+        /// <param name="data">Record data.</param>
+        /// <returns>The result code.</returns>
+        /// <exception cref="System.ArgumentNullException">
+        /// key is null
+        /// </exception>
+        public unsafe UnQLiteResultCode TryGetRaw(string key, out byte[] data) {
             if(key == null) {
                 throw new ArgumentNullException("key");
             }
@@ -229,24 +370,35 @@ namespace UnqliteNet {
             }
         }
 
+        /// <summary>
+        /// Get a binary record from the database.
+        /// </summary>
+        /// <param name="key">Record key.</param>
+        /// <returns>Record data.</returns>
+        /// <exception cref="System.ArgumentNullException">
+        /// key is null
+        /// </exception>
+        /// <exception cref="UnQLiteException">
+        /// An UnQLiteException occurred.
+        /// </exception>
         public byte[] GetRaw(string key) {
             byte[] data;
-            UnqliteResultCode code = TryGetRaw(key, out data);
-            if(code == UnqliteResultCode.Ok || code == UnqliteResultCode.NotFound) {
+            UnQLiteResultCode code = TryGetRaw(key, out data);
+            if(code == UnQLiteResultCode.Ok || code == UnQLiteResultCode.NotFound) {
                 return data;
             }
-            throw new UnqliteException(code, GetDataBaseErrorLog());
+            throw new UnQLiteException(code, GetDataBaseErrorLog());
         }
 
-        private unsafe UnqliteResultCode InternalTryGet(byte* keyBuffer, int keyCount, out string data) {
+        private unsafe UnQLiteResultCode InternalTryGet(byte* keyBuffer, int keyCount, out string data) {
             data = null;
             long dataLength;
-            UnqliteResultCode code = unqlite_kv_fetch(pDb_, keyBuffer, keyCount, null, out dataLength);
+            UnQLiteResultCode code = UnsafeNativeMethods.unqlite_kv_fetch(pDb_, keyBuffer, keyCount, null, out dataLength);
             if(code == 0) {
                 if(dataLength <= kSmallDataBufferSize) {
                     int len = (int)dataLength;
                     byte* dataBuffer = stackalloc byte[len];
-                    code = unqlite_kv_fetch(pDb_, keyBuffer, keyCount, dataBuffer, out dataLength);
+                    code = UnsafeNativeMethods.unqlite_kv_fetch(pDb_, keyBuffer, keyCount, dataBuffer, out dataLength);
                     if(code == 0) {
                         data = new string((sbyte*)dataBuffer, 0, len, Encoding);
                     }
@@ -254,7 +406,7 @@ namespace UnqliteNet {
                 else {
                     byte[] dataBytes = new byte[dataLength];
                     fixed (byte* dataBuffer = dataBytes) {
-                        code = unqlite_kv_fetch(pDb_, keyBuffer, keyCount, dataBuffer, out dataLength);
+                        code = UnsafeNativeMethods.unqlite_kv_fetch(pDb_, keyBuffer, keyCount, dataBuffer, out dataLength);
                         if(code == 0) {
                             data = Encoding.GetString(dataBytes);
                         }
@@ -264,7 +416,16 @@ namespace UnqliteNet {
             return code;
         }
 
-        public unsafe UnqliteResultCode TryGet(string key, out string data) {
+        /// <summary>
+        ///  Get a string record from the database without UnQLiteException.
+        /// </summary>
+        /// <param name="key">Record key.</param>
+        /// <param name="data">Record data.</param>
+        /// <returns>The result code.</returns>
+        /// <exception cref="System.ArgumentNullException">
+        /// key is null
+        /// </exception>
+        public unsafe UnQLiteResultCode TryGet(string key, out string data) {
             if(key == null) {
                 throw new ArgumentNullException("key");
             }
@@ -282,24 +443,44 @@ namespace UnqliteNet {
             }
         }
 
+        /// <summary>
+        /// Get a string record from the database.
+        /// </summary>
+        /// <param name="key">Record key.</param>
+        /// <returns>Record data.</returns>
+        /// <exception cref="System.ArgumentNullException">
+        /// key is null
+        /// </exception>
+        /// <exception cref="UnQLiteException">
+        /// An UnQLiteException occurred.
+        /// </exception>
         public string Get(string key) {
             string value;
-            UnqliteResultCode code = TryGet(key, out value);
-            if(code == UnqliteResultCode.Ok || code == UnqliteResultCode.NotFound) {
+            UnQLiteResultCode code = TryGet(key, out value);
+            if(code == UnQLiteResultCode.Ok || code == UnQLiteResultCode.NotFound) {
                 return value;
             }
-            throw new UnqliteException(code, GetDataBaseErrorLog());
+            throw new UnQLiteException(code, GetDataBaseErrorLog());
         }
 
-        private unsafe UnqliteResultCode InternalTrySaveRaw(byte* keyBuffer, int keyCount, ArraySegment<byte> data) {
+        private unsafe UnQLiteResultCode InternalTrySaveRaw(byte* keyBuffer, int keyCount, ArraySegment<byte> data) {
             fixed (byte* dataBuffer = data.Array) {
-                UnqliteResultCode code = unqlite_kv_store(pDb_, keyBuffer, keyCount, dataBuffer + data.Offset, data.Count);
+                UnQLiteResultCode code = UnsafeNativeMethods.unqlite_kv_store(pDb_, keyBuffer, keyCount, dataBuffer + data.Offset, data.Count);
                 TryCommit(ref code);
                 return code;
             }
         }
 
-        public unsafe UnqliteResultCode TrySaveRaw(string key, ArraySegment<byte> data) {
+        /// <summary>
+        /// Store binary record in the database without UnQLiteException.
+        /// </summary>
+        /// <param name="key">Record key.</param>
+        /// <param name="data">Record data.</param>
+        /// <exception cref="System.ArgumentNullException">
+        /// key is null
+        /// </exception>
+        /// <returns>The result code.</returns>
+        public unsafe UnQLiteResultCode TrySaveRaw(string key, ArraySegment<byte> data) {
             if(key == null) {
                 throw new ArgumentNullException("key");
             }
@@ -317,15 +498,30 @@ namespace UnqliteNet {
             }
         }
 
+        /// <summary>
+        /// Store binary record in the database.
+        /// </summary>
+        /// <remarks>
+        /// Write a new record into the database. If the record does not exists, it is created. 
+        /// Otherwise, it is replaced. That is, the new data overwrite the old data.
+        /// </remarks>
+        /// <param name="key">Record key.</param>
+        /// <param name="data">Record data.</param>
+        /// <exception cref="System.ArgumentNullException">
+        /// key is null
+        /// </exception>
+        /// <exception cref="UnQLiteException">
+        /// An UnQLiteException occurred.
+        /// </exception>
         public void SaveRaw(string key, ArraySegment<byte> data) {
-            UnqliteResultCode code = TrySaveRaw(key, data);
-            if(code != UnqliteResultCode.Ok) {
-                throw new UnqliteException(code, GetDataBaseErrorLog());
+            UnQLiteResultCode code = TrySaveRaw(key, data);
+            if(code != UnQLiteResultCode.Ok) {
+                throw new UnQLiteException(code, GetDataBaseErrorLog());
             }
         }
 
-        private unsafe UnqliteResultCode InternalTrySave(byte* keyBuffer, int keyCount, string data) {
-            UnqliteResultCode code;
+        private unsafe UnQLiteResultCode InternalTrySave(byte* keyBuffer, int keyCount, string data) {
+            UnQLiteResultCode code;
             int dataCount = Encoding.GetByteCount(data);
             if(dataCount <= kSmallDataBufferSize) {
                 byte* dataBuffer = stackalloc byte[dataCount];
@@ -334,19 +530,28 @@ namespace UnqliteNet {
                         Encoding.GetBytes(dataPtr, data.Length, dataBuffer, dataCount);
                     }
                 }
-                code = unqlite_kv_store(pDb_, keyBuffer, keyCount, dataBuffer, dataCount);
+                code = UnsafeNativeMethods.unqlite_kv_store(pDb_, keyBuffer, keyCount, dataBuffer, dataCount);
             }
             else {
                 byte[] dataBytes = Encoding.GetBytes(data);
                 fixed (byte* dataBuffer = dataBytes) {
-                    code = unqlite_kv_store(pDb_, keyBuffer, keyCount, dataBuffer, dataBytes.Length);
+                    code = UnsafeNativeMethods.unqlite_kv_store(pDb_, keyBuffer, keyCount, dataBuffer, dataBytes.Length);
                 }
             }
             TryCommit(ref code);
             return code;
         }
 
-        public unsafe UnqliteResultCode TrySave(string key, string data) {
+        /// <summary>
+        /// Store string record in the database without UnQLiteException.
+        /// </summary>
+        /// <param name="key">Record key.</param>
+        /// <param name="data">Record data.</param>
+        /// <exception cref="System.ArgumentNullException">
+        /// key is null
+        /// </exception>
+        /// <returns>The result code.</returns>
+        public unsafe UnQLiteResultCode TrySave(string key, string data) {
             if(key == null) {
                 throw new ArgumentNullException("key");
             }
@@ -367,20 +572,42 @@ namespace UnqliteNet {
             }
         }
 
+        /// <summary>
+        /// Store string record in the database.
+        /// </summary>
+        /// <remarks>
+        /// Write a new record into the database. If the record does not exists, it is created. 
+        /// Otherwise, it is replaced. That is, the new data overwrite the old data.
+        /// </remarks>
+        /// <param name="key">Record key.</param>
+        /// <param name="data">Record data.</param>
+        /// <exception cref="System.ArgumentNullException">
+        /// key is null
+        /// </exception>
+        /// <exception cref="UnQLiteException">
+        /// An UnQLiteException occurred.
+        /// </exception>
         public void Save(string key, string data) {
-            UnqliteResultCode code = TrySave(key, data);
-            if(code != UnqliteResultCode.Ok) {
-                throw new UnqliteException(code, GetDataBaseErrorLog());
+            UnQLiteResultCode code = TrySave(key, data);
+            if(code != UnQLiteResultCode.Ok) {
+                throw new UnQLiteException(code, GetDataBaseErrorLog());
             }
         }
 
-        private unsafe UnqliteResultCode InternalTryRemove(byte* keyBuffer, int keyCount) {
-            UnqliteResultCode code = unqlite_kv_delete(pDb_, keyBuffer, keyCount);
+        private unsafe UnQLiteResultCode InternalTryRemove(byte* keyBuffer, int keyCount) {
+            UnQLiteResultCode code = UnsafeNativeMethods.unqlite_kv_delete(pDb_, keyBuffer, keyCount);
             TryCommit(ref code);
             return code;
         }
 
-        public unsafe UnqliteResultCode TryRemove(string key) {
+        /// <summary>
+        /// Remove the record from the database without UnQLiteException.
+        /// </summary>
+        /// <param name="key">Record key.</param>
+        /// <exception cref="System.ArgumentNullException">
+        /// key is null
+        /// </exception>
+        public unsafe UnQLiteResultCode TryRemove(string key) {
             if(key == null) {
                 throw new ArgumentNullException("key");
             }
@@ -398,182 +625,484 @@ namespace UnqliteNet {
             }
         }
 
+        /// <summary>
+        /// Remove the record from the database.
+        /// </summary>
+        /// <remarks>
+        /// To remove a particular record from the database, 
+        /// you can use this high-level thread-safe routine to perform the deletion.
+        /// </remarks>
+        /// <param name="key">Record key.</param>
+        /// <exception cref="System.ArgumentNullException">
+        /// key is null
+        /// </exception>
+        /// <exception cref="UnQLiteException">
+        /// An UnQLiteException occurred.
+        /// </exception>
         public void Remove(string key) {
-            UnqliteResultCode code = TryRemove(key);
-            if(code != UnqliteResultCode.Ok) {
-                throw new UnqliteException(code, GetDataBaseErrorLog());
+            UnQLiteResultCode code = TryRemove(key);
+            if(code != UnQLiteResultCode.Ok) {
+                throw new UnQLiteException(code, GetDataBaseErrorLog());
             }
         }
 
+        /// <summary>
+        ///  Get the error log of a database.
+        /// </summary>
+        /// <param name="pDb">The pointer of database object.</param>
+        /// <returns></returns>
         public unsafe static string GetDataBaseErrorLog(IntPtr pDb) {
             sbyte* zbuf;
             int len;
-            unqlite_config(pDb, UnqliteConfigCode.ErrLog, __arglist(out zbuf, out len));
+            UnsafeNativeMethods.unqlite_config(pDb, UnQLiteConfigCode.ErrLog, __arglist(out zbuf, out len));
             if(len > 0) {
                 return new string(zbuf, 0, len, Encoding.ASCII);
             }
             return null;
         }
 
+        /// <summary>
+        /// Get the error log of the database.
+        /// </summary>
+        /// <remarks>
+        /// When something goes wrong during a commit, rollback, store, append operation, 
+        /// a human-readable error message is generated to help clients diagnostic the problem.
+        /// </remarks>
         public unsafe string GetDataBaseErrorLog() {
             return GetDataBaseErrorLog(pDb_);
         }
 
-        public UnqliteTransaction BeginTransaction() {
-            return new UnqliteTransaction(this);
+        /// <summary>
+        /// Manually begin a write-transaction on the database.
+        /// </summary>
+        public UnQLiteTransaction BeginTransaction() {
+            return new UnQLiteTransaction(this);
         }
 
-        /* Database Engine Handle */
-        [DllImport(kDllName, CharSet = CharSet.Ansi)]
-        public static extern UnqliteResultCode unqlite_open(out IntPtr ppDB, string zFilename, UnqliteOpenModel iMode);
-        [DllImport(kDllName, CallingConvention = CallingConvention.Cdecl)]
-        public static extern UnqliteResultCode unqlite_config(IntPtr pDb, UnqliteConfigCode nOp, __arglist);
-        [DllImport(kDllName)]
-        public static extern UnqliteResultCode unqlite_close(IntPtr pDb);
+        /// <summary>
+        /// Core export Interfaces.Not recommended for direct use.
+        /// </summary>
+        /// <remarks>
+        /// Referenced https://www.unqlite.org/api_intro.html
+        /// </remarks>
+        public static class UnsafeNativeMethods {
+            private const string kDllName = "unqlite";
 
-        /* Key/Value (KV) Store Interfaces */
-        [DllImport(kDllName)]
-        public static unsafe extern UnqliteResultCode unqlite_kv_append(IntPtr pDb, void* pKey, int keyLen, void* pdata, Int64 nDataLen);
-        [DllImport(kDllName)]
-        public static unsafe extern UnqliteResultCode unqlite_kv_store(IntPtr pDb, void* pKey, int keyLen, void* pdata, Int64 nDataLen);
-        [DllImport(kDllName)]
-        public static unsafe extern UnqliteResultCode unqlite_kv_fetch(IntPtr pDb, void* pKey, int keyLen, void* pdata, out Int64 nDataLen);
-        [DllImport(kDllName)]
-        public static unsafe extern UnqliteResultCode unqlite_kv_delete(IntPtr pDb, void* pKey, int keyLen);
+            #region  /* Database Engine Handle */
+            /// <summary>
+            /// The native original function
+            /// </summary>
+            [DllImport(kDllName, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
+            public static extern UnQLiteResultCode unqlite_open(out IntPtr ppDB, string zFilename, UnQLiteOpenModel iMode);
+            /// <summary>
+            /// The native original function
+            /// </summary>
+            [DllImport(kDllName, CallingConvention = CallingConvention.Cdecl)]
+            public static extern UnQLiteResultCode unqlite_config(IntPtr pDb, UnQLiteConfigCode nOp, __arglist);
+            /// <summary>
+            /// The native original function
+            /// </summary>
+            [DllImport(kDllName, CallingConvention = CallingConvention.Cdecl)]
+            public static extern UnQLiteResultCode unqlite_close(IntPtr pDb);
+            #endregion
 
-        /* Manual Transaction Manager */
-        [DllImport(kDllName)]
-        public static extern UnqliteResultCode unqlite_begin(IntPtr pDb);
-        [DllImport(kDllName)]
-        public static extern UnqliteResultCode unqlite_commit(IntPtr pDb);
-        [DllImport(kDllName)]
-        public static extern UnqliteResultCode unqlite_rollback(IntPtr pDb);
+            #region  /* Key/Value (KV) Store Interfaces */
+            /// <summary>
+            /// The native original function
+            /// </summary>
+            [DllImport(kDllName, CallingConvention = CallingConvention.Cdecl)]
+            public static unsafe extern UnQLiteResultCode unqlite_kv_append(IntPtr pDb, void* pKey, int keyLen, void* pdata, Int64 nDataLen);
+            /// <summary>
+            /// The native original function
+            /// </summary>
+            [DllImport(kDllName, CallingConvention = CallingConvention.Cdecl)]
+            public static unsafe extern UnQLiteResultCode unqlite_kv_store(IntPtr pDb, void* pKey, int keyLen, void* pdata, Int64 nDataLen);
+            /// <summary>
+            /// The native original function
+            /// </summary>
+            [DllImport(kDllName, CallingConvention = CallingConvention.Cdecl)]
+            public static unsafe extern UnQLiteResultCode unqlite_kv_fetch(IntPtr pDb, void* pKey, int keyLen, void* pdata, out Int64 nDataLen);
+            /// <summary>
+            /// The native original function
+            /// </summary>
+            [DllImport(kDllName, CallingConvention = CallingConvention.Cdecl)]
+            public static unsafe extern UnQLiteResultCode unqlite_kv_delete(IntPtr pDb, void* pKey, int keyLen);
+            #endregion
 
-        /* Global Library Management Interfaces */
-        [DllImport(kDllName)]
-        public static unsafe extern UnqliteResultCode unqlite_lib_config(UnqliteLibConfigCode nConfigOp, __arglist);
-        [DllImport(kDllName)]
-        public static unsafe extern UnqliteResultCode unqlite_lib_init();
-        [DllImport(kDllName)]
-        public static unsafe extern UnqliteResultCode unqlite_lib_shutdown();
-        [DllImport(kDllName)]
-        public static unsafe extern int unqlite_lib_is_threadsafe();
-        [DllImport(kDllName)]
-        public static unsafe extern sbyte* unqlite_lib_version();
-        [DllImport(kDllName)]
-        public static unsafe extern sbyte* unqlite_lib_signature();
-        [DllImport(kDllName)]
-        public static unsafe extern sbyte* unqlite_lib_ident();
-        [DllImport(kDllName)]
-        public static unsafe extern sbyte* unqlite_lib_copyright();
+            #region  /* Manual Transaction Manager */
+            /// <summary>
+            /// The native original function
+            /// </summary>
+            [DllImport(kDllName, CallingConvention = CallingConvention.Cdecl)]
+            public static extern UnQLiteResultCode unqlite_begin(IntPtr pDb);
+            /// <summary>
+            /// The native original function
+            /// </summary>
+            [DllImport(kDllName, CallingConvention = CallingConvention.Cdecl)]
+            public static extern UnQLiteResultCode unqlite_commit(IntPtr pDb);
+            /// <summary>
+            /// The native original function
+            /// </summary>
+            [DllImport(kDllName, CallingConvention = CallingConvention.Cdecl)]
+            public static extern UnQLiteResultCode unqlite_rollback(IntPtr pDb);
+            #endregion
+
+            #region /* Global Library Management Interfaces */
+            /// <summary>
+            /// The native original function
+            /// </summary>
+            [DllImport(kDllName, CallingConvention = CallingConvention.Cdecl)]
+            public static unsafe extern UnQLiteResultCode unqlite_lib_config(UnQLiteLibConfigCode nConfigOp, __arglist);
+            /// <summary>
+            /// The native original function
+            /// </summary>
+            [DllImport(kDllName, CallingConvention = CallingConvention.Cdecl)]
+            public static unsafe extern UnQLiteResultCode unqlite_lib_init();
+            /// <summary>
+            /// The native original function
+            /// </summary>
+            [DllImport(kDllName, CallingConvention = CallingConvention.Cdecl)]
+            public static unsafe extern UnQLiteResultCode unqlite_lib_shutdown();
+            /// <summary>
+            /// The native original function
+            /// </summary>
+            [DllImport(kDllName, CallingConvention = CallingConvention.Cdecl)]
+            public static unsafe extern int unqlite_lib_is_threadsafe();
+            /// <summary>
+            /// The native original function
+            /// </summary>
+            [DllImport(kDllName, CallingConvention = CallingConvention.Cdecl)]
+            public static unsafe extern sbyte* unqlite_lib_version();
+            /// <summary>
+            /// The native original function
+            /// </summary>
+            [DllImport(kDllName, CallingConvention = CallingConvention.Cdecl)]
+            public static unsafe extern sbyte* unqlite_lib_signature();
+            /// <summary>
+            /// The native original function
+            /// </summary>
+            [DllImport(kDllName, CallingConvention = CallingConvention.Cdecl)]
+            public static unsafe extern sbyte* unqlite_lib_ident();
+            /// <summary>
+            /// The native original function
+            /// </summary>
+            [DllImport(kDllName, CallingConvention = CallingConvention.Cdecl)]
+            public static unsafe extern sbyte* unqlite_lib_copyright();
+            #endregion
+        }
     }
 
+    /// <summary>
+    /// The open mode codes.
+    /// </summary>
     [Flags]
-    public enum UnqliteOpenModel {
-        ReadOnly = 0x00000001,              /* Read only mode. Ok for [unqlite_open] */
-        ReadWrite = 0x00000002,             /* Ok for [unqlite_open] */
-        Create = 0x00000004,                /* Ok for [unqlite_open] */
-        Exclusive = 0x00000008,             /* VFS only */
-        TempDb = 0x00000010,                /* VFS only */
-        NoMutex = 0x00000020,               /* Ok for [unqlite_open] */
-        OmitJournaling = 0x00000040,        /* Omit journaling for this database. Ok for [unqlite_open] */
-        InMemory = 0x00000080,              /* An in memory database. Ok for [unqlite_open]*/
-        MemoryMapped = 0x00000100,          /* Obtain a memory view of the whole file. Ok for [unqlite_open] */
+    public enum UnQLiteOpenModel {
+        /// <summary>
+        /// Read only mode. Ok for [unqlite_open] 
+        /// </summary>
+        ReadOnly = 0x00000001,
+        /// <summary>
+        /// Ok for [unqlite_open]
+        /// </summary>
+        ReadWrite = 0x00000002,
+        /// <summary>
+        /// Ok for [unqlite_open]
+        /// </summary>
+        Create = 0x00000004,
+        /// <summary>
+        /// VFS only
+        /// </summary>
+        Exclusive = 0x00000008,
+        /// <summary>
+        /// VFS only
+        /// </summary>
+        TempDb = 0x00000010,
+        /// <summary>
+        /// Ok for [unqlite_open]
+        /// </summary>
+        NoMutex = 0x00000020,
+        /// <summary>
+        /// Omit journaling for this database. Ok for [unqlite_open]
+        /// </summary>
+        OmitJournaling = 0x00000040,
+        /// <summary>
+        /// An in memory database. Ok for [unqlite_open]
+        /// </summary>
+        InMemory = 0x00000080,
+        /// <summary>
+        /// Obtain a memory view of the whole file. Ok for [unqlite_open]
+        /// </summary>
+        MemoryMapped = 0x00000100,
     }
 
-    public enum UnqliteResultCode {
-        Ok = 0,                             /* Successful result */
-        NoMem = -1,                         /* Out of memory */
-        Abort = -10,                        /* Another thread have released this instance */
-        IOErr = -2,                         /* IO error */
-        Corrupt = -24,                      /* Corrupt pointer */
-        Locked = -4,                        /* Forbidden Operation */
-        Busy = -14,                         /* The database file is locked */
-        Done = -28,                         /* Operation done */
-        Perm = -19,                         /* Permission error */
-        NotImplemented = -17,               /* Method not implemented by the underlying Key/Value storage engine */
-        NotFound = -6,                      /* No such record */
-        Noop = -20,                         /* No such method */
-        Invalid = -9,                       /* Invalid parameter */
-        EOF = -18,                          /* End Of Input */
-        Unknown = -13,                      /* Unknown configuration option */
-        Limit = -7,                         /* Database limit reached */
-        Exists = -11,                       /* Record exists */
-        Empty = -3,                         /* Empty record */
-        CompileErr = -70,                   /* Compilation error */
-        VMErr = 71,                         /* Virtual machine error */
-        Full = -73,                         /* Full database (unlikely) */
-        CantOpen = -74,                     /* Unable to open the database file */
-        ReadOnly = -75,                     /* Read only Key/Value storage engine */
-        LockErr = -76,                      /* Locking protocol error */
+    /// <summary>
+    ///  Standard UnQLite result codes.
+    /// </summary>
+    public enum UnQLiteResultCode {
+        /// <summary>
+        /// Successful result
+        /// </summary>
+        Ok = 0,
+        /// <summary>
+        /// Out of memory
+        /// </summary>
+        NoMem = -1,
+        /// <summary>
+        /// Another thread have released this instance
+        /// </summary>
+        Abort = -10,
+        /// <summary>
+        /// IO error
+        /// </summary>
+        IOErr = -2,
+        /// <summary>
+        /// Corrupt pointer
+        /// </summary>
+        Corrupt = -24,
+        /// <summary>
+        /// Forbidden Operation
+        /// </summary>
+        Locked = -4,
+        /// <summary>
+        /// The database file is locked 
+        /// </summary>
+        Busy = -14,
+        /// <summary>
+        /// Operation done
+        /// </summary>
+        Done = -28,
+        /// <summary>
+        /// Permission error
+        /// </summary>
+        Perm = -19,
+        /// <summary>
+        /// Method not implemented by the underlying Key/Value storage engine
+        /// </summary>
+        NotImplemented = -17,
+        /// <summary>
+        /// No such record
+        /// </summary>
+        NotFound = -6,
+        /// <summary>
+        /// No such method
+        /// </summary>
+        Noop = -20,
+        /// <summary>
+        /// Invalid parameter
+        /// </summary>
+        Invalid = -9,
+        /// <summary>
+        /// End Of Input
+        /// </summary>
+        EOF = -18,
+        /// <summary>
+        /// Unknown configuration option
+        /// </summary>
+        Unknown = -13,
+        /// <summary>
+        /// Database limit reached
+        /// </summary>
+        Limit = -7,
+        /// <summary>
+        /// Record exists
+        /// </summary>
+        Exists = -11,
+        /// <summary>
+        /// Empty record
+        /// </summary>
+        Empty = -3,
+        /// <summary>
+        /// Compilation error
+        /// </summary>
+        CompileErr = -70,
+        /// <summary>
+        /// Virtual machine error
+        /// </summary>
+        VMErr = 71,
+        /// <summary>
+        /// Full database (unlikely)
+        /// </summary>
+        Full = -73,
+        /// <summary>
+        /// Unable to open the database file
+        /// </summary>
+        CantOpen = -74,
+        /// <summary>
+        /// Read only Key/Value storage engine
+        /// </summary>
+        ReadOnly = -75,
+        /// <summary>
+        /// Locking protocol error
+        /// </summary>
+        LockErr = -76,          
     }
 
-    public enum UnqliteConfigCode {
-        JX9ErrLog = 1,                      /* TWO ARGUMENTS: const char **pzBuf, int *pLen */
-        MaxPageCache = 2,                   /* ONE ARGUMENT: int nMaxPage */
-        ErrLog = 3,                         /* TWO ARGUMENTS: const char **pzBuf, int *pLen */
-        KVEngine = 4,                       /* ONE ARGUMENT: const char *zKvName */
-        DisableAutoCommit = 5,              /* NO ARGUMENTS */
-        GetKVName = 6,                      /* ONE ARGUMENT: const char **pzPtr */
+    /// <summary>
+    /// Database Handle Configuration Commands.
+    /// </summary>
+    public enum UnQLiteConfigCode {
+        /// <summary>
+        /// TWO ARGUMENTS: const char **pzBuf, int *pLen
+        /// </summary>
+        JX9ErrLog = 1,
+        /// <summary>
+        /// ONE ARGUMENT: int nMaxPage
+        /// </summary>
+        MaxPageCache = 2,
+        /// <summary>
+        /// TWO ARGUMENTS: const char **pzBuf, int *pLen
+        /// </summary>
+        ErrLog = 3,
+        /// <summary>
+        /// ONE ARGUMENT: const char *zKvName
+        /// </summary>
+        KVEngine = 4,
+        /// <summary>
+        /// NO ARGUMENTS
+        /// </summary>
+        DisableAutoCommit = 5,
+        /// <summary>
+        /// ONE ARGUMENT: const char **pzPtr
+        /// </summary>
+        GetKVName = 6,             
     }
 
-    public enum UnqliteLibConfigCode {
-        UserMalloc = 1,                     /* ONE ARGUMENT: const SyMemMethods *pMemMethods */
-        MemErrCallback = 2,                 /* TWO ARGUMENTS: int (*xMemError)(void *), void *pUserData */
-        UserMutex = 3,                      /* ONE ARGUMENT: const SyMutexMethods *pMutexMethods */
-        ThreadLevelSingle = 4,              /* NO ARGUMENTS */
-        ThreadLevelMulti = 5,               /* NO ARGUMENTS */
-        VFS = 6,                            /* ONE ARGUMENT: const unqlite_vfs *pVfs */
-        StorageEngine = 7,                  /* ONE ARGUMENT: unqlite_kv_methods *pStorage */
-        PageSize = 8,                       /* ONE ARGUMENT: int iPageSize */
+    /// <summary>
+    /// Global Library Configuration Commands.
+    /// </summary>
+    public enum UnQLiteLibConfigCode {
+        /// <summary>
+        /// ONE ARGUMENT: const SyMemMethods *pMemMethods
+        /// </summary>
+        UserMalloc = 1,
+        /// <summary>
+        /// TWO ARGUMENTS: int (*xMemError)(void *), void *pUserData
+        /// </summary>
+        MemErrCallback = 2,
+        /// <summary>
+        /// ONE ARGUMENT: const SyMutexMethods *pMutexMethods
+        /// </summary>
+        UserMutex = 3,
+        /// <summary>
+        /// NO ARGUMENTS
+        /// </summary>
+        ThreadLevelSingle = 4,
+        /// <summary>
+        /// NO ARGUMENTS
+        /// </summary>
+        ThreadLevelMulti = 5,
+        /// <summary>
+        /// ONE ARGUMENT: const unqlite_vfs *pVfs
+        /// </summary>
+        VFS = 6,
+        /// <summary>
+        /// ONE ARGUMENT: unqlite_kv_methods *pStorage
+        /// </summary>
+        StorageEngine = 7,
+        /// <summary>
+        /// ONE ARGUMENT: int iPageSize
+        /// </summary>
+        PageSize = 8,             
     }
 
-    public sealed class UnqliteLibConfigSetting {
+    /// <summary>
+    /// The UnQLite library setting class.
+    /// </summary>
+    public sealed class UnQLiteLibConfigSetting {
+        /// <summary>
+        /// This option sets the threading mode whether thread-safe.
+        /// </summary>
         public bool IsThreadSafe;
+        /// <summary>
+        /// This option let you set a new database page size in bytes.
+        /// </summary>
+        /// <remarks>
+        /// The default page size (4096 Bytes) is recommended for most applications, 
+        /// but application can use this option to experiment with other page sizes. 
+        /// A valid page size must be a power of two between 512 and 65535.
+        /// </remarks>
         public int PageSize;
     }
 
-    public sealed class UnqliteException : Exception {
-        public UnqliteException(UnqliteResultCode code, string log) : base(!string.IsNullOrEmpty(log) ? log : code.ToString()) {
+    /// <summary>
+    /// UnQLite exception class.
+    /// </summary>
+    public sealed class UnQLiteException : Exception {
+        /// <summary>
+        /// Public constructor for generating a UnQLite exception given the result code and message.
+        /// </summary>
+        /// <param name="code">The UnQLite return code to report.</param>
+        /// <param name="message">Message text to go along with the return code message text.</param>
+        public UnQLiteException(UnQLiteResultCode code, string message) : base(!string.IsNullOrEmpty(message) ? message : code.ToString()) {
         }
     }
 
-    public sealed class UnqliteTransaction : IDisposable {
-        private Unqlite unqlite_;
+    /// <summary>
+    /// Manual Transaction Manager
+    /// </summary>
+    public sealed class UnQLiteTransaction : IDisposable {
+        private UnQLite unQLite_;
 
-        internal UnqliteTransaction(Unqlite unqlite) {
-            unqlite_ = unqlite;
-            unqlite_.isAutoCommit_ = false;
+        internal UnQLiteTransaction(UnQLite unqlite) {
+            unQLite_ = unqlite;
+            unQLite_.isAutoCommit_ = false;
         }
 
         private bool IsNeedCommit {
             get {
-                return unqlite_.isAutoCommit_ == false;
+                return unQLite_.isAutoCommit_ == false;
             }
         }
 
-        public UnqliteResultCode TryCommit() {
-            unqlite_.isAutoCommit_ = true;
-            UnqliteResultCode code = UnqliteResultCode.Ok;
-            unqlite_.TryCommit(ref code);
+        /// <summary>
+        /// Commit all changes to the database without UnQLiteException.
+        /// </summary>
+        /// <returns>The result code.</returns>
+        public UnQLiteResultCode TryCommit() {
+            unQLite_.isAutoCommit_ = true;
+            UnQLiteResultCode code = UnQLiteResultCode.Ok;
+            unQLite_.TryCommit(ref code);
             return code;
         }
 
+        /// <summary>
+        /// Commit all changes to the database.
+        /// </summary>
+        /// <exception cref="UnQLiteException">
+        /// An UnQLiteException occurred.
+        /// </exception>
         public void Commit() {
-            UnqliteResultCode code = TryCommit();
-            if(code != UnqliteResultCode.Ok) {
-                new UnqliteException(code, unqlite_.GetDataBaseErrorLog());
+            UnQLiteResultCode code = TryCommit();
+            if(code != UnQLiteResultCode.Ok) {
+                new UnQLiteException(code, unQLite_.GetDataBaseErrorLog());
             }
         }
 
+        /// <summary>
+        /// Rollback a write-transaction on the database without UnQLiteException.
+        /// </summary>
+        /// <returns>The result code.</returns>
+        public UnQLiteResultCode TryRollback() {
+            unQLite_.isAutoCommit_ = true;
+            return unQLite_.Rollback();
+        }
+
+        /// <summary>
+        /// Rollback a write-transaction on the database.
+        /// </summary>
+        /// <exception cref="UnQLiteException">
+        /// An UnQLiteException occurred.
+        /// </exception>
         public void Rollback() {
-            unqlite_.isAutoCommit_ = true;
-            UnqliteResultCode code = unqlite_.Rollback();
-            if(code != UnqliteResultCode.Ok) {
-                new UnqliteException(code, unqlite_.GetDataBaseErrorLog());
+            UnQLiteResultCode code = TryRollback();
+            if(code != UnQLiteResultCode.Ok) {
+                new UnQLiteException(code, unQLite_.GetDataBaseErrorLog());
             }
         }
 
+        /// <summary>
+        /// Disposes the transaction, if applicable.
+        /// </summary>
         public void Dispose() {
             if(IsNeedCommit) {
                 Commit();

@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 // 控制。更改这些特性值可修改
 // 与程序集关联的信息。
 [assembly: AssemblyTitle("unqlite-net")]
-[assembly: AssemblyDescription("UnQlite binding for .Net")]
+[assembly: AssemblyDescription("UnQLite binding for .Net")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
 [assembly: AssemblyProduct("unqlite-net")]
