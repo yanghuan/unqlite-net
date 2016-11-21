@@ -1,2 +1,2 @@
 # unqlite-net
-C# binding for unqlite
+UnQlite binding for .Net
