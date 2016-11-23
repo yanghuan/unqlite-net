@@ -23,7 +23,9 @@ unqlite.Close();
 ## Installation
 ### NuGet
 https://www.nuget.org/packages/unqlite-net/  
+
 `Install-Package unqlite-net`
+
 
 ## *License*
 [Apache 2.0 license](https://raw.githubusercontent.com/sy-yanghuan/unqlite-net/master/LICENSE).
