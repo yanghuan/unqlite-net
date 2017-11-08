@@ -45,12 +45,12 @@ namespace UnQLiteNet {
         /// The UnQLiteException when open file.
         /// </exception>
         public UnQLite(string fileName, UnQLiteOpenModel model) {
-            if(fileName == null) {
+            if (fileName == null) {
                 throw new ArgumentNullException("fileName");
             }
 
             UnQLiteResultCode code = UnsafeNativeMethods.unqlite_open(out pDb_, fileName, model);
-            if(code != UnQLiteResultCode.Ok) {
+            if (code != UnQLiteResultCode.Ok) {
                 throw new UnQLiteException(code, GetDataBaseErrorLog());
             }
         }
@@ -62,14 +62,14 @@ namespace UnQLiteNet {
         ///  fileName is null.
         /// </exception>
         public static UnQLiteResultCode TryOpen(string fileName, UnQLiteOpenModel model, out UnQLite unqlite) {
-            if(fileName == null) {
+            if (fileName == null) {
                 throw new ArgumentNullException("fileName");
             }
 
             unqlite = null;
             IntPtr pDB;
             UnQLiteResultCode code = UnsafeNativeMethods.unqlite_open(out pDB, fileName, model);
-            if(code == UnQLiteResultCode.Ok) {
+            if (code == UnQLiteResultCode.Ok) {
                 unqlite = new UnQLite(pDB);
             }
             return code;
@@ -92,7 +92,7 @@ namespace UnQLiteNet {
         /// Each database must be closed in order to avoid memory leaks and malformed database image.
         /// </remarks>
         public void Close() {
-            if(pDb_ != IntPtr.Zero) {
+            if (pDb_ != IntPtr.Zero) {
                 UnsafeNativeMethods.unqlite_close(pDb_);
                 pDb_ = IntPtr.Zero;
             }
@@ -158,34 +158,34 @@ namespace UnQLiteNet {
         /// The UnQLiteException when initializes the library.
         /// </exception>
         public static void LibInit(UnQLiteLibConfigSetting setting) {
-            if(setting == null) {
+            if (setting == null) {
                 throw new ArgumentNullException("setting");
             }
 
             UnQLiteLibConfigCode config = setting.IsThreadSafe ? UnQLiteLibConfigCode.ThreadLevelMulti : UnQLiteLibConfigCode.ThreadLevelSingle;
             UnQLiteResultCode code = UnsafeNativeMethods.unqlite_lib_config(config, __arglist());
-            if(code != UnQLiteResultCode.Ok) {
+            if (code != UnQLiteResultCode.Ok) {
                 throw new UnQLiteException(code, null);
             }
 
-            if(setting.PageSize > 0) {
+            if (setting.PageSize > 0) {
                 code = UnsafeNativeMethods.unqlite_lib_config(UnQLiteLibConfigCode.PageSize, __arglist(setting.PageSize));
-                if(code != UnQLiteResultCode.Ok) {
+                if (code != UnQLiteResultCode.Ok) {
                     throw new UnQLiteException(code, null);
                 }
             }
 
             code = UnsafeNativeMethods.unqlite_lib_init();
-            if(code != UnQLiteResultCode.Ok) {
+            if (code != UnQLiteResultCode.Ok) {
                 throw new UnQLiteException(code, null);
             }
         }
 
         internal void TryCommit(ref UnQLiteResultCode code) {
-            if(code == UnQLiteResultCode.Ok && isAutoCommit_) {
+            if (code == UnQLiteResultCode.Ok && isAutoCommit_) {
                 code = UnsafeNativeMethods.unqlite_commit(pDb_);
-                if(code != UnQLiteResultCode.Ok) {
-                    if(code != UnQLiteResultCode.Busy && code != UnQLiteResultCode.NotImplemented) {
+                if (code != UnQLiteResultCode.Ok) {
+                    if (code != UnQLiteResultCode.Busy && code != UnQLiteResultCode.NotImplemented) {
                         Rollback();
                     }
                 }
@@ -204,6 +204,14 @@ namespace UnQLiteNet {
             }
         }
 
+        private static unsafe void GetPtr(string data, byte* dataBuffer, int len) {
+            if (len > 0) {
+                fixed (char* dataPtr = data) {
+                    Encoding.GetBytes(dataPtr, data.Length, dataBuffer, len);
+                }
+            }
+        }
+
         /// <summary>
         /// Append binary data to a database record without UnQLiteException.
         /// </summary>
@@ -214,16 +222,16 @@ namespace UnQLiteNet {
         /// key is null
         /// </exception>
         public unsafe UnQLiteResultCode TryAppendRaw(string key, ArraySegment<byte> data) {
-            if(key == null) {
+            if (key == null) {
                 throw new ArgumentNullException("key");
             }
 
             int keyCount = Encoding.GetByteCount(key);
-            if(keyCount <= kSmallKeyBufferSize) {
+            if (keyCount <= kSmallKeyBufferSize) {
                 byte* keyBuffer = stackalloc byte[keyCount];
+                GetPtr(key, keyBuffer, keyCount);
                 return InternalTryAppendRaw(keyBuffer, keyCount, data);
-            }
-            else {
+            } else {
                 byte[] keyBytes = new byte[keyCount];
                 fixed (byte* keyBuffer = keyBytes) {
                     return InternalTryAppendRaw(keyBuffer, keyCount, data);
@@ -248,7 +256,7 @@ namespace UnQLiteNet {
         /// </exception>
         public void AppendRaw(string key, ArraySegment<byte> data) {
             UnQLiteResultCode code = TryAppendRaw(key, data);
-            if(code != UnQLiteResultCode.Ok) {
+            if (code != UnQLiteResultCode.Ok) {
                 throw new UnQLiteException(code, GetDataBaseErrorLog());
             }
         }
@@ -256,16 +264,11 @@ namespace UnQLiteNet {
         private unsafe UnQLiteResultCode InternalTryAppend(byte* keyBuffer, int keyCount, string data) {
             UnQLiteResultCode code;
             int dataCount = Encoding.GetByteCount(data);
-            if(dataCount <= kSmallDataBufferSize) {
+            if (dataCount <= kSmallDataBufferSize) {
                 byte* dataBuffer = stackalloc byte[dataCount];
-                if(dataCount > 0) {
-                    fixed (char* dataPtr = data) {
-                        Encoding.GetBytes(dataPtr, data.Length, dataBuffer, dataCount);
-                    }
-                }
+                GetPtr(data, dataBuffer, dataCount);
                 code = UnsafeNativeMethods.unqlite_kv_append(pDb_, keyBuffer, keyCount, dataBuffer, dataCount);
-            }
-            else {
+            } else {
                 byte[] dataBytes = Encoding.GetBytes(data);
                 fixed (byte* dataBuffer = dataBytes) {
                     code = UnsafeNativeMethods.unqlite_kv_append(pDb_, keyBuffer, keyCount, dataBuffer, dataBytes.Length);
@@ -285,20 +288,20 @@ namespace UnQLiteNet {
         /// key or data is null
         /// </exception>
         public unsafe UnQLiteResultCode TryAppend(string key, string data) {
-            if(key == null) {
+            if (key == null) {
                 throw new ArgumentNullException("key");
             }
-            if(data == null) {
+            if (data == null) {
                 throw new ArgumentNullException("data");
             }
 
             int keyCount = Encoding.GetByteCount(key);
-            if(keyCount <= kSmallKeyBufferSize) {
+            if (keyCount <= kSmallKeyBufferSize) {
                 byte* keyBuffer = stackalloc byte[keyCount];
+                GetPtr(key, keyBuffer, keyCount);
                 return InternalTryAppend(keyBuffer, keyCount, data);
-            }
-            else {
-                byte[] keyBytes = new byte[keyCount];
+            } else {
+                byte[] keyBytes = Encoding.GetBytes(key);
                 fixed (byte* keyBuffer = keyBytes) {
                     return InternalTryAppend(keyBuffer, keyCount, data);
                 }
@@ -322,7 +325,7 @@ namespace UnQLiteNet {
         /// </exception>
         public void Append(string key, string data) {
             UnQLiteResultCode code = TryAppend(key, data);
-            if(code != UnQLiteResultCode.Ok) {
+            if (code != UnQLiteResultCode.Ok) {
                 throw new UnQLiteException(code, GetDataBaseErrorLog());
             }
         }
@@ -331,11 +334,11 @@ namespace UnQLiteNet {
             data = null;
             long dataLength;
             UnQLiteResultCode code = UnsafeNativeMethods.unqlite_kv_fetch(pDb_, keyBuffer, keyCount, null, out dataLength);
-            if(code == 0) {
+            if (code == 0) {
                 byte[] valueBytes = new byte[dataLength];
                 fixed (byte* valueBuffer = valueBytes) {
                     code = UnsafeNativeMethods.unqlite_kv_fetch(pDb_, keyBuffer, keyCount, valueBuffer, out dataLength);
-                    if(code == 0) {
+                    if (code == 0) {
                         data = valueBytes;
                     }
                 }
@@ -353,17 +356,17 @@ namespace UnQLiteNet {
         /// key is null
         /// </exception>
         public unsafe UnQLiteResultCode TryGetRaw(string key, out byte[] data) {
-            if(key == null) {
+            if (key == null) {
                 throw new ArgumentNullException("key");
             }
 
             int keyCount = Encoding.GetByteCount(key);
-            if(keyCount <= kSmallKeyBufferSize) {
+            if (keyCount <= kSmallKeyBufferSize) {
                 byte* keyBuffer = stackalloc byte[keyCount];
+                GetPtr(key, keyBuffer, keyCount);
                 return InteranlTryGetRaw(keyBuffer, keyCount, out data);
-            }
-            else {
-                byte[] keyBytes = new byte[keyCount];
+            } else {
+                byte[] keyBytes = Encoding.GetBytes(key);
                 fixed (byte* keyBuffer = keyBytes) {
                     return InteranlTryGetRaw(keyBuffer, keyCount, out data);
                 }
@@ -384,7 +387,7 @@ namespace UnQLiteNet {
         public byte[] GetRaw(string key) {
             byte[] data;
             UnQLiteResultCode code = TryGetRaw(key, out data);
-            if(code == UnQLiteResultCode.Ok || code == UnQLiteResultCode.NotFound) {
+            if (code == UnQLiteResultCode.Ok || code == UnQLiteResultCode.NotFound) {
                 return data;
             }
             throw new UnQLiteException(code, GetDataBaseErrorLog());
@@ -394,20 +397,19 @@ namespace UnQLiteNet {
             data = null;
             long dataLength;
             UnQLiteResultCode code = UnsafeNativeMethods.unqlite_kv_fetch(pDb_, keyBuffer, keyCount, null, out dataLength);
-            if(code == 0) {
-                if(dataLength <= kSmallDataBufferSize) {
+            if (code == 0) {
+                if (dataLength <= kSmallDataBufferSize) {
                     int len = (int)dataLength;
                     byte* dataBuffer = stackalloc byte[len];
                     code = UnsafeNativeMethods.unqlite_kv_fetch(pDb_, keyBuffer, keyCount, dataBuffer, out dataLength);
-                    if(code == 0) {
+                    if (code == 0) {
                         data = new string((sbyte*)dataBuffer, 0, len, Encoding);
                     }
-                }
-                else {
+                } else {
                     byte[] dataBytes = new byte[dataLength];
                     fixed (byte* dataBuffer = dataBytes) {
                         code = UnsafeNativeMethods.unqlite_kv_fetch(pDb_, keyBuffer, keyCount, dataBuffer, out dataLength);
-                        if(code == 0) {
+                        if (code == 0) {
                             data = Encoding.GetString(dataBytes);
                         }
                     }
@@ -426,17 +428,17 @@ namespace UnQLiteNet {
         /// key is null
         /// </exception>
         public unsafe UnQLiteResultCode TryGet(string key, out string data) {
-            if(key == null) {
+            if (key == null) {
                 throw new ArgumentNullException("key");
             }
 
             int keyCount = Encoding.GetByteCount(key);
-            if(keyCount <= kSmallKeyBufferSize) {
+            if (keyCount <= kSmallKeyBufferSize) {
                 byte* keyBuffer = stackalloc byte[keyCount];
+                GetPtr(key, keyBuffer, keyCount);
                 return InternalTryGet(keyBuffer, keyCount, out data);
-            }
-            else {
-                byte[] keyBytes = new byte[keyCount];
+            } else {
+                byte[] keyBytes = Encoding.GetBytes(key);
                 fixed (byte* keyBuffer = keyBytes) {
                     return InternalTryGet(keyBuffer, keyCount, out data);
                 }
@@ -457,7 +459,7 @@ namespace UnQLiteNet {
         public string Get(string key) {
             string value;
             UnQLiteResultCode code = TryGet(key, out value);
-            if(code == UnQLiteResultCode.Ok || code == UnQLiteResultCode.NotFound) {
+            if (code == UnQLiteResultCode.Ok || code == UnQLiteResultCode.NotFound) {
                 return value;
             }
             throw new UnQLiteException(code, GetDataBaseErrorLog());
@@ -481,17 +483,17 @@ namespace UnQLiteNet {
         /// </exception>
         /// <returns>The result code.</returns>
         public unsafe UnQLiteResultCode TrySaveRaw(string key, ArraySegment<byte> data) {
-            if(key == null) {
+            if (key == null) {
                 throw new ArgumentNullException("key");
             }
 
             int keyCount = Encoding.GetByteCount(key);
-            if(keyCount <= kSmallKeyBufferSize) {
+            if (keyCount <= kSmallKeyBufferSize) {
                 byte* keyBuffer = stackalloc byte[keyCount];
+                GetPtr(key, keyBuffer, keyCount);
                 return InternalTrySaveRaw(keyBuffer, keyCount, data);
-            }
-            else {
-                byte[] keyBytes = new byte[keyCount];
+            } else {
+                byte[] keyBytes = Encoding.GetBytes(key);
                 fixed (byte* keyBuffer = keyBytes) {
                     return InternalTrySaveRaw(keyBuffer, keyCount, data);
                 }
@@ -515,7 +517,7 @@ namespace UnQLiteNet {
         /// </exception>
         public void SaveRaw(string key, ArraySegment<byte> data) {
             UnQLiteResultCode code = TrySaveRaw(key, data);
-            if(code != UnQLiteResultCode.Ok) {
+            if (code != UnQLiteResultCode.Ok) {
                 throw new UnQLiteException(code, GetDataBaseErrorLog());
             }
         }
@@ -523,16 +525,11 @@ namespace UnQLiteNet {
         private unsafe UnQLiteResultCode InternalTrySave(byte* keyBuffer, int keyCount, string data) {
             UnQLiteResultCode code;
             int dataCount = Encoding.GetByteCount(data);
-            if(dataCount <= kSmallDataBufferSize) {
+            if (dataCount <= kSmallDataBufferSize) {
                 byte* dataBuffer = stackalloc byte[dataCount];
-                if(dataCount > 0) {
-                    fixed (char* dataPtr = data) {
-                        Encoding.GetBytes(dataPtr, data.Length, dataBuffer, dataCount);
-                    }
-                }
+                GetPtr(data, dataBuffer, dataCount);
                 code = UnsafeNativeMethods.unqlite_kv_store(pDb_, keyBuffer, keyCount, dataBuffer, dataCount);
-            }
-            else {
+            } else {
                 byte[] dataBytes = Encoding.GetBytes(data);
                 fixed (byte* dataBuffer = dataBytes) {
                     code = UnsafeNativeMethods.unqlite_kv_store(pDb_, keyBuffer, keyCount, dataBuffer, dataBytes.Length);
@@ -552,20 +549,20 @@ namespace UnQLiteNet {
         /// </exception>
         /// <returns>The result code.</returns>
         public unsafe UnQLiteResultCode TrySave(string key, string data) {
-            if(key == null) {
+            if (key == null) {
                 throw new ArgumentNullException("key");
             }
-            if(data == null) {
+            if (data == null) {
                 throw new ArgumentNullException("data");
             }
 
             int keyCount = Encoding.GetByteCount(key);
-            if(keyCount <= kSmallKeyBufferSize) {
+            if (keyCount <= kSmallKeyBufferSize) {
                 byte* keyBuffer = stackalloc byte[keyCount];
+                GetPtr(key, keyBuffer, keyCount);
                 return InternalTrySave(keyBuffer, keyCount, data);
-            }
-            else {
-                byte[] keyBytes = new byte[keyCount];
+            } else {
+                byte[] keyBytes = Encoding.GetBytes(key);
                 fixed (byte* keyBuffer = keyBytes) {
                     return InternalTrySave(keyBuffer, keyCount, data);
                 }
@@ -589,7 +586,7 @@ namespace UnQLiteNet {
         /// </exception>
         public void Save(string key, string data) {
             UnQLiteResultCode code = TrySave(key, data);
-            if(code != UnQLiteResultCode.Ok) {
+            if (code != UnQLiteResultCode.Ok) {
                 throw new UnQLiteException(code, GetDataBaseErrorLog());
             }
         }
@@ -608,17 +605,17 @@ namespace UnQLiteNet {
         /// key is null
         /// </exception>
         public unsafe UnQLiteResultCode TryRemove(string key) {
-            if(key == null) {
+            if (key == null) {
                 throw new ArgumentNullException("key");
             }
 
             int keyCount = Encoding.GetByteCount(key);
-            if(keyCount <= kSmallKeyBufferSize) {
+            if (keyCount <= kSmallKeyBufferSize) {
                 byte* keyBuffer = stackalloc byte[keyCount];
+                GetPtr(key, keyBuffer, keyCount);
                 return InternalTryRemove(keyBuffer, keyCount);
-            }
-            else {
-                byte[] keyBytes = new byte[keyCount];
+            } else {
+                byte[] keyBytes = Encoding.GetBytes(key);
                 fixed (byte* keyBuffer = keyBytes) {
                     return InternalTryRemove(keyBuffer, keyCount);
                 }
@@ -641,7 +638,7 @@ namespace UnQLiteNet {
         /// </exception>
         public void Remove(string key) {
             UnQLiteResultCode code = TryRemove(key);
-            if(code != UnQLiteResultCode.Ok) {
+            if (code != UnQLiteResultCode.Ok) {
                 throw new UnQLiteException(code, GetDataBaseErrorLog());
             }
         }
@@ -655,7 +652,7 @@ namespace UnQLiteNet {
             sbyte* zbuf;
             int len;
             UnsafeNativeMethods.unqlite_config(pDb, UnQLiteConfigCode.ErrLog, __arglist(out zbuf, out len));
-            if(len > 0) {
+            if (len > 0) {
                 return new string(zbuf, 0, len, Encoding.ASCII);
             }
             return null;
@@ -934,7 +931,7 @@ namespace UnQLiteNet {
         /// <summary>
         /// Locking protocol error
         /// </summary>
-        LockErr = -76,          
+        LockErr = -76,
     }
 
     /// <summary>
@@ -964,7 +961,7 @@ namespace UnQLiteNet {
         /// <summary>
         /// ONE ARGUMENT: const char **pzPtr
         /// </summary>
-        GetKVName = 6,             
+        GetKVName = 6,
     }
 
     /// <summary>
@@ -1002,7 +999,7 @@ namespace UnQLiteNet {
         /// <summary>
         /// ONE ARGUMENT: int iPageSize
         /// </summary>
-        PageSize = 8,             
+        PageSize = 8,
     }
 
     /// <summary>
@@ -1073,7 +1070,7 @@ namespace UnQLiteNet {
         /// </exception>
         public void Commit() {
             UnQLiteResultCode code = TryCommit();
-            if(code != UnQLiteResultCode.Ok) {
+            if (code != UnQLiteResultCode.Ok) {
                 new UnQLiteException(code, unQLite_.GetDataBaseErrorLog());
             }
         }
@@ -1095,7 +1092,7 @@ namespace UnQLiteNet {
         /// </exception>
         public void Rollback() {
             UnQLiteResultCode code = TryRollback();
-            if(code != UnQLiteResultCode.Ok) {
+            if (code != UnQLiteResultCode.Ok) {
                 new UnQLiteException(code, unQLite_.GetDataBaseErrorLog());
             }
         }
@@ -1104,7 +1101,7 @@ namespace UnQLiteNet {
         /// Disposes the transaction, if applicable.
         /// </summary>
         public void Dispose() {
-            if(IsNeedCommit) {
+            if (IsNeedCommit) {
                 Commit();
             }
         }
