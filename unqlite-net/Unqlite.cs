@@ -232,7 +232,7 @@ namespace UnQLiteNet {
                 GetPtr(key, keyBuffer, keyCount);
                 return InternalTryAppendRaw(keyBuffer, keyCount, data);
             } else {
-                byte[] keyBytes = new byte[keyCount];
+                byte[] keyBytes = Encoding.GetBytes(key);
                 fixed (byte* keyBuffer = keyBytes) {
                     return InternalTryAppendRaw(keyBuffer, keyCount, data);
                 }
